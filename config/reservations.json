@@ -1,0 +1,27 @@
+{
+  "timezone": "Asia/Seoul",
+  "site": {
+    "url": "https://iic-restaurant2.vercel.app/"
+  },
+  "schedule": {
+    "weekdaysOnly": true,
+    "startTime": "08:00",
+    "endTime": "08:05",
+    "retryDelayMs": 2000,
+    "nextReservationDelayMs": 3000
+  },
+  "browser": {
+    "headless": true,
+    "slowMo": 0,
+    "navigationTimeoutMs": 20000,
+    "actionTimeoutMs": 5000
+  },
+  "reservations": [
+    {
+      "label": "guest-1",
+      "enabled": true,
+      "time": "12:00",
+      "phone": "010-9889-9387"
+    }
+  ]
+}

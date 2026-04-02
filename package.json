@@ -1,0 +1,13 @@
+{
+  "name": "mecro-reservation",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "run:reservation": "node src/index.js"
+  },
+  "dependencies": {
+    "playwright": "^1.53.1"
+  }
+}
