@@ -2,8 +2,8 @@ name: Reservation Bot
 
 on:
   schedule:
-    - cron: "55 22 * * 0-4"
-    - cron: "0 23 * * 0-4"
+    - cron: "55 22 * * *"
+    - cron: "0 23 * * *"
   workflow_dispatch:
 
 jobs:
@@ -12,7 +12,7 @@ jobs:
       group: reservation-bot-main
       cancel-in-progress: false
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 40
 
     steps:
       - name: Checkout

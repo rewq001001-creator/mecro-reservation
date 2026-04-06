@@ -4,11 +4,11 @@
     "url": "https://iic-restaurant2.vercel.app/"
   },
   "schedule": {
-    "weekdaysOnly": true,
+    "weekdaysOnly": false,
     "startTime": "08:00",
     "endTime": "08:05",
-    "latestAttemptTime": "09:30",
-    "maxRuntimeMinutes": 90,
+    "latestAttemptTime": "08:30",
+    "maxRuntimeMinutes": 35,
     "retryDelayMs": 2000,
     "nextReservationDelayMs": 3000
   },
