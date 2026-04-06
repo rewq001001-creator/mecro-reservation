@@ -7,6 +7,8 @@
     "weekdaysOnly": true,
     "startTime": "08:00",
     "endTime": "08:05",
+    "latestAttemptTime": "09:30",
+    "maxRuntimeMinutes": 90,
     "retryDelayMs": 2000,
     "nextReservationDelayMs": 3000
   },

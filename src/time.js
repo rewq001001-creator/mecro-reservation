@@ -37,13 +37,29 @@ export function getScheduleWindowStatus(schedule, timeZone, now = new Date()) {
   const minutes = parts.hour * 60 + parts.minute;
   const startMinutes = parseMinutes(schedule.startTime);
   const endMinutes = parseMinutes(schedule.endTime);
+  const latestAttemptMinutes = parseMinutes(schedule.latestAttemptTime ?? schedule.endTime);
   const isWeekend = parts.weekday === "Sat" || parts.weekday === "Sun";
   const withinWindow = minutes >= startMinutes && minutes <= endMinutes;
+  const beforeWindow = minutes < startMinutes;
+  const afterWindow = minutes > endMinutes;
+  const beforeLatestAttempt = minutes <= latestAttemptMinutes;
+  const secondsUntilStart = beforeWindow
+    ? (startMinutes - minutes) * 60 - parts.second
+    : 0;
+  const secondsUntilLatestAttemptEnd = beforeLatestAttempt
+    ? (latestAttemptMinutes - minutes) * 60 + (59 - parts.second)
+    : 0;
 
   return {
     ...parts,
     isWeekend,
     withinWindow,
+    beforeWindow,
+    afterWindow,
+    latestAttemptMinutes,
+    beforeLatestAttempt,
+    secondsUntilStart,
+    secondsUntilLatestAttemptEnd,
     startMinutes,
     endMinutes
   };

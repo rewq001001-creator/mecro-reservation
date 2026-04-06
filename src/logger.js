@@ -25,6 +25,12 @@ export function createLogger() {
 
   return {
     logPath,
+    logDir,
+    createArtifactPath(...segments) {
+      const artifactPath = path.join(logDir, ...segments);
+      fs.mkdirSync(path.dirname(artifactPath), { recursive: true });
+      return artifactPath;
+    },
     info(message, extra) {
       write("INFO", message, extra);
     },

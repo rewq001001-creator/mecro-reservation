@@ -1,7 +1,42 @@
+import fs from "node:fs";
 import { chromium } from "playwright";
 
 function normalizePhoneNumber(phone) {
   return phone.replace(/[^0-9]/g, "");
+}
+
+function normalizeTimeToken(time) {
+  return String(time).replace(/[^0-9]/g, "");
+}
+
+function toSafeFileToken(value) {
+  return String(value).replace(/[^a-zA-Z0-9._-]+/g, "-");
+}
+
+async function captureCompletionEvidence(page, reservation, logger, modalText, reservationNumber) {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const prefix = `${stamp}-${toSafeFileToken(reservation.label)}`;
+  const screenshotPath = logger.createArtifactPath("evidence", `${prefix}-completion.png`);
+  const htmlPath = logger.createArtifactPath("evidence", `${prefix}-completion.html`);
+  const textPath = logger.createArtifactPath("evidence", `${prefix}-completion.txt`);
+
+  await page.screenshot({ path: screenshotPath, fullPage: true });
+  fs.writeFileSync(htmlPath, await page.content(), "utf8");
+  fs.writeFileSync(textPath, modalText, "utf8");
+
+  logger.info("예약 완료 증빙 저장", {
+    label: reservation.label,
+    screenshotPath,
+    htmlPath,
+    textPath,
+    reservationNumber
+  });
+
+  return {
+    screenshotPath,
+    htmlPath,
+    textPath
+  };
 }
 
 async function clickReservationTab(page, logger) {
@@ -85,6 +120,7 @@ async function submitReservation(page, reservation, logger) {
   logger.info("예약 제출 클릭", { label: reservation.label });
 
   const successTitle = page.getByText("예약 완료!", { exact: true });
+  const successDescription = page.getByText("예약이 확정되었습니다.", { exact: true });
   const successVisible = await successTitle.waitFor({ state: "visible", timeout: 3000 }).then(
     () => true,
     () => false
@@ -96,7 +132,30 @@ async function submitReservation(page, reservation, logger) {
   }
 
   const modalText = await page.locator("body").innerText();
+  const normalizedModalText = modalText.replace(/\s+/g, " ");
   const reservationNumberMatch = modalText.match(/IIC-[0-9-]+/);
+  const hasSuccessDescription = await successDescription.isVisible().catch(() => false);
+  const hasExpectedPhone = normalizedModalText.includes(normalizePhoneNumber(reservation.phone));
+  const hasExpectedTime = normalizedModalText.includes(normalizeTimeToken(reservation.time));
+
+  if (!hasSuccessDescription || !reservationNumberMatch || !hasExpectedPhone || !hasExpectedTime) {
+    logger.warn("예약 완료 팝업은 보였지만 완료 정보 검증에 실패했습니다", {
+      label: reservation.label,
+      hasSuccessDescription,
+      hasReservationNumber: Boolean(reservationNumberMatch),
+      hasExpectedPhone,
+      hasExpectedTime
+    });
+    return { success: false, reason: "completion-details-mismatch" };
+  }
+
+  const evidence = await captureCompletionEvidence(
+    page,
+    reservation,
+    logger,
+    modalText,
+    reservationNumberMatch?.[0] ?? null
+  );
   const confirmationButton = page.getByRole("button", { name: /^확인$/ }).first();
 
   if (await confirmationButton.isVisible().catch(() => false)) {
@@ -107,12 +166,14 @@ async function submitReservation(page, reservation, logger) {
     label: reservation.label,
     time: reservation.time,
     phone: reservation.phone,
-    reservationNumber: reservationNumberMatch?.[0] ?? null
+    reservationNumber: reservationNumberMatch[0],
+    evidence
   });
 
   return {
     success: true,
-    reservationNumber: reservationNumberMatch?.[0] ?? null
+    reservationNumber: reservationNumberMatch[0],
+    evidence
   };
 }
 
@@ -128,7 +189,7 @@ async function attemptReservation(page, reservation, logger) {
   return submitReservation(page, reservation, logger);
 }
 
-export async function runReservationBot(config, logger) {
+export async function runReservationBot(config, logger, maxWindowSeconds = null) {
   const browser = await chromium.launch({
     headless: config.browser.headless,
     slowMo: config.browser.slowMo
@@ -145,7 +206,8 @@ export async function runReservationBot(config, logger) {
   const enabledReservations = config.reservations.filter((reservation) => reservation.enabled);
   const completed = new Set();
   const startedAt = Date.now();
-  const deadline = startedAt + 5 * 60 * 1000;
+  const fallbackWindowMs = (config.schedule.maxRuntimeMinutes ?? 90) * 60 * 1000;
+  const deadline = startedAt + ((maxWindowSeconds ?? 0) > 0 ? maxWindowSeconds * 1000 : fallbackWindowMs);
 
   logger.info("자동 예약 시작", {
     enabledReservations: enabledReservations.length,
@@ -212,7 +274,8 @@ export async function runReservationBot(config, logger) {
 
     logger.warn("시도 가능 시간이 지나서 종료합니다", {
       completedCount: completed.size,
-      totalCount: enabledReservations.length
+      totalCount: enabledReservations.length,
+      completed: [...completed]
     });
     return { status: "window-expired", completed: [...completed] };
   } finally {
