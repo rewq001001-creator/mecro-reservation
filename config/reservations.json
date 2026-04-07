@@ -1,7 +1,7 @@
 {
   "timezone": "Asia/Seoul",
   "site": {
-    "url": "https://iic-restaurant2.vercel.app/"
+    "url": "https://restaurant.iicombined.com/"
   },
   "schedule": {
     "weekdaysOnly": false,
@@ -25,5 +25,15 @@
       "time": "12:00",
       "phone": "010-9889-9387"
     }
-  ]
+  ],
+  "dateOverrides": {
+    "2026-04-08": {
+      "reservations": [
+        {
+          "label": "guest-1",
+          "time": "12:30"
+        }
+      ]
+    }
+  }
 }
