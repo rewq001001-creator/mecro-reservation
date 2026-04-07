@@ -9,6 +9,22 @@ function normalizeTimeToken(time) {
   return String(time).replace(/[^0-9]/g, "");
 }
 
+function getPhoneMatchers(phone) {
+  const digits = normalizePhoneNumber(phone);
+  const lastFour = digits.slice(-4);
+  const maskedPattern = new RegExp(`010[- ]?\\*{2,4}[- ]?${lastFour}`);
+  const fullPattern = new RegExp(`010[- ]?${digits.slice(3, 7)}[- ]?${lastFour}`);
+  return { digits, lastFour, maskedPattern, fullPattern };
+}
+
+function getTodayDateLabel() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}년 ${month}월 ${day}일`;
+}
+
 function toSafeFileToken(value) {
   return String(value).replace(/[^a-zA-Z0-9._-]+/g, "-");
 }
@@ -44,6 +60,62 @@ async function clickReservationTab(page, logger) {
   await tab.waitFor({ state: "visible", timeout: 5000 });
   await tab.click();
   logger.info("예약 탭 선택");
+}
+
+async function clickReservationLookupTab(page, logger) {
+  const tab = page.getByRole("button", { name: /^예약 확인 및 취소$/ }).first();
+  await tab.waitFor({ state: "visible", timeout: 5000 });
+  await tab.click();
+  logger.info("예약 확인 및 취소 탭 선택");
+}
+
+async function verifyReservationInLookup(page, reservation, logger) {
+  await clickReservationLookupTab(page, logger);
+
+  const bodyText = await page.locator("body").innerText();
+  const normalizedBodyText = bodyText.replace(/\s+/g, " ");
+  const reservationNumberMatch = bodyText.match(/IIC-[0-9-]+/);
+  const phoneMatchers = getPhoneMatchers(reservation.phone);
+  const hasConfirmedBadge = /확정/.test(normalizedBodyText);
+  const hasExpectedDate = normalizedBodyText.includes(getTodayDateLabel());
+  const hasExpectedTime = normalizedBodyText.includes(`${reservation.time} 타임`);
+  const hasExpectedPhone =
+    phoneMatchers.fullPattern.test(normalizedBodyText) || phoneMatchers.maskedPattern.test(normalizedBodyText);
+
+  if (!hasConfirmedBadge || !hasExpectedDate || !hasExpectedTime || !hasExpectedPhone) {
+    logger.info("예약 확인 및 취소 탭에서 최종 확인 조건을 만족하지 못했습니다", {
+      label: reservation.label,
+      hasConfirmedBadge,
+      hasExpectedDate,
+      hasExpectedTime,
+      hasExpectedPhone
+    });
+    return { success: false, reason: "lookup-verification-failed" };
+  }
+
+  const evidence = await captureCompletionEvidence(
+    page,
+    reservation,
+    logger,
+    bodyText,
+    reservationNumberMatch?.[0] ?? null
+  );
+
+  logger.info("예약 확인 및 취소 탭에서 예약 내역 확인", {
+    label: reservation.label,
+    reservationNumber: reservationNumberMatch?.[0] ?? null,
+    expectedDate: getTodayDateLabel(),
+    hasExpectedDate,
+    hasExpectedTime,
+    hasExpectedPhone,
+    evidence
+  });
+
+  return {
+    success: true,
+    reservationNumber: reservationNumberMatch?.[0] ?? null,
+    evidence
+  };
 }
 
 async function isSiteClosed(page) {
@@ -149,35 +221,32 @@ async function submitReservation(page, reservation, logger) {
     return { success: false, reason: "completion-details-mismatch" };
   }
 
-  const evidence = await captureCompletionEvidence(
-    page,
-    reservation,
-    logger,
-    modalText,
-    reservationNumberMatch?.[0] ?? null
-  );
   const confirmationButton = page.getByRole("button", { name: /^확인$/ }).first();
 
   if (await confirmationButton.isVisible().catch(() => false)) {
     await confirmationButton.click();
   }
 
-  logger.info("예약 성공", {
+  logger.info("예약 완료 팝업 확인", {
     label: reservation.label,
     time: reservation.time,
     phone: reservation.phone,
-    reservationNumber: reservationNumberMatch[0],
-    evidence
+    reservationNumber: reservationNumberMatch[0]
   });
 
-  return {
-    success: true,
-    reservationNumber: reservationNumberMatch[0],
-    evidence
-  };
+  return verifyReservationInLookup(page, reservation, logger);
 }
 
 async function attemptReservation(page, reservation, logger) {
+  const existingReservation = await verifyReservationInLookup(page, reservation, logger);
+  if (existingReservation.success) {
+    logger.info("이미 예약된 내역이 있어 추가 시도를 중단합니다", {
+      label: reservation.label,
+      reservationNumber: existingReservation.reservationNumber
+    });
+    return existingReservation;
+  }
+
   await clickReservationTab(page, logger);
 
   const slotSelected = await selectTimeSlot(page, reservation, logger);
