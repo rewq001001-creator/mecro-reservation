@@ -69,22 +69,50 @@ async function clickReservationLookupTab(page, logger) {
   logger.info("예약 확인 및 취소 탭 선택");
 }
 
+async function lookupReservationByPhone(page, reservation, logger) {
+  const phoneInput = page.getByPlaceholder(/010-0000-0000/).first();
+  await phoneInput.waitFor({ state: "visible", timeout: 5000 });
+  await phoneInput.fill("");
+  await phoneInput.fill(normalizePhoneNumber(reservation.phone));
+
+  const lookupButton = page.getByRole("button", { name: /^예약 조회하기$/ }).first();
+  await lookupButton.waitFor({ state: "visible", timeout: 5000 });
+  await lookupButton.click();
+  logger.info("예약 조회 실행", {
+    label: reservation.label,
+    phone: reservation.phone
+  });
+}
+
 async function verifyReservationInLookup(page, reservation, logger) {
   await clickReservationLookupTab(page, logger);
+  await lookupReservationByPhone(page, reservation, logger);
+  await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => undefined);
+  await page.waitForTimeout(500);
 
   const bodyText = await page.locator("body").innerText();
   const normalizedBodyText = bodyText.replace(/\s+/g, " ");
   const reservationNumberMatch = bodyText.match(/IIC-[0-9-]+/);
   const phoneMatchers = getPhoneMatchers(reservation.phone);
+  const hasNoReservationMessage = /오늘 예약 내역이 없습니다\./.test(normalizedBodyText);
   const hasConfirmedBadge = /확정/.test(normalizedBodyText);
   const hasExpectedDate = normalizedBodyText.includes(getTodayDateLabel());
   const hasExpectedTime = normalizedBodyText.includes(`${reservation.time} 타임`);
   const hasExpectedPhone =
     phoneMatchers.fullPattern.test(normalizedBodyText) || phoneMatchers.maskedPattern.test(normalizedBodyText);
 
+  if (hasNoReservationMessage) {
+    logger.info("예약 조회 결과 오늘 예약 내역이 없습니다", {
+      label: reservation.label,
+      phone: reservation.phone
+    });
+    return { success: false, reason: "lookup-empty" };
+  }
+
   if (!hasConfirmedBadge || !hasExpectedDate || !hasExpectedTime || !hasExpectedPhone) {
     logger.info("예약 확인 및 취소 탭에서 최종 확인 조건을 만족하지 못했습니다", {
       label: reservation.label,
+      hasNoReservationMessage,
       hasConfirmedBadge,
       hasExpectedDate,
       hasExpectedTime,
