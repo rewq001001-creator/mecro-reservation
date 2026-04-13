@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
-    "run:reservation": "node src/index.js"
+    "run:reservation": "node src/index.js",
+    "start:cloud": "node src/server.js"
   },
   "dependencies": {
     "playwright": "^1.53.1"

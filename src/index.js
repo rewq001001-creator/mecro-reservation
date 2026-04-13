@@ -2,8 +2,9 @@ import { loadConfig, getConfigPath } from "./config.js";
 import { createLogger } from "./logger.js";
 import { runReservationBot } from "./reservationBot.js";
 import { getScheduleWindowStatus } from "./time.js";
+import { pathToFileURL } from "node:url";
 
-async function main() {
+export async function main() {
   const logger = createLogger();
   const config = loadConfig();
   const scheduleStatus = getScheduleWindowStatus(config.schedule, config.timezone);
@@ -58,9 +59,15 @@ async function main() {
     ignoreScheduleWindow ? null : refreshedStatus.secondsUntilLatestAttemptEnd
   );
   logger.info("자동 예약 종료", result ?? {});
+  return result ?? {};
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+const isDirectRun =
+  process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isDirectRun) {
+  main().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}
