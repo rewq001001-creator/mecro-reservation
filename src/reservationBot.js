@@ -17,12 +17,22 @@ function getPhoneMatchers(phone) {
   return { digits, lastFour, maskedPattern, fullPattern };
 }
 
-function getTodayDateLabel() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${year}년 ${month}월 ${day}일`;
+function getTodayDateLabel(timeZone) {
+  const formatter = new Intl.DateTimeFormat("ko-KR", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  });
+
+  const parts = Object.fromEntries(
+    formatter
+      .formatToParts(new Date())
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value])
+  );
+
+  return `${parts.year}년 ${parts.month}월 ${parts.day}일`;
 }
 
 function toSafeFileToken(value) {
@@ -84,7 +94,7 @@ async function lookupReservationByPhone(page, reservation, logger) {
   });
 }
 
-async function verifyReservationInLookup(page, reservation, logger) {
+async function verifyReservationInLookup(page, reservation, logger, timeZone) {
   await clickReservationLookupTab(page, logger);
   await lookupReservationByPhone(page, reservation, logger);
   await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => undefined);
@@ -96,7 +106,8 @@ async function verifyReservationInLookup(page, reservation, logger) {
   const phoneMatchers = getPhoneMatchers(reservation.phone);
   const hasNoReservationMessage = /오늘 예약 내역이 없습니다\./.test(normalizedBodyText);
   const hasConfirmedBadge = /확정/.test(normalizedBodyText);
-  const hasExpectedDate = normalizedBodyText.includes(getTodayDateLabel());
+  const expectedDate = getTodayDateLabel(timeZone);
+  const hasExpectedDate = normalizedBodyText.includes(expectedDate);
   const hasExpectedTime = normalizedBodyText.includes(`${reservation.time} 타임`);
   const hasExpectedPhone =
     phoneMatchers.fullPattern.test(normalizedBodyText) || phoneMatchers.maskedPattern.test(normalizedBodyText);
@@ -132,7 +143,7 @@ async function verifyReservationInLookup(page, reservation, logger) {
   logger.info("예약 확인 및 취소 탭에서 예약 내역 확인", {
     label: reservation.label,
     reservationNumber: reservationNumberMatch?.[0] ?? null,
-    expectedDate: getTodayDateLabel(),
+    expectedDate,
     hasExpectedDate,
     hasExpectedTime,
     hasExpectedPhone,
@@ -203,7 +214,7 @@ async function fillPhone(page, reservation, logger) {
   logger.info("연락처 입력", { label: reservation.label, phone: reservation.phone });
 }
 
-async function submitReservation(page, reservation, logger) {
+async function submitReservation(page, reservation, logger, timeZone) {
   const submitButton = page
     .locator("button")
     .filter({ hasText: /예약하기/ })
@@ -262,11 +273,11 @@ async function submitReservation(page, reservation, logger) {
     reservationNumber: reservationNumberMatch[0]
   });
 
-  return verifyReservationInLookup(page, reservation, logger);
+  return verifyReservationInLookup(page, reservation, logger, timeZone);
 }
 
-async function attemptReservation(page, reservation, logger) {
-  const existingReservation = await verifyReservationInLookup(page, reservation, logger);
+async function attemptReservation(page, reservation, logger, timeZone) {
+  const existingReservation = await verifyReservationInLookup(page, reservation, logger, timeZone);
   if (existingReservation.success) {
     logger.info("이미 예약된 내역이 있어 추가 시도를 중단합니다", {
       label: reservation.label,
@@ -283,7 +294,7 @@ async function attemptReservation(page, reservation, logger) {
   }
 
   await fillPhone(page, reservation, logger);
-  return submitReservation(page, reservation, logger);
+  return submitReservation(page, reservation, logger, timeZone);
 }
 
 export async function runReservationBot(config, logger, maxWindowSeconds = null) {
@@ -335,7 +346,7 @@ export async function runReservationBot(config, logger, maxWindowSeconds = null)
           phone: reservation.phone
         });
 
-        const result = await attemptReservation(page, reservation, logger);
+        const result = await attemptReservation(page, reservation, logger, config.timezone);
         if (result.success) {
           completed.add(reservation.label);
           logger.info("다음 예약자로 이동 전 대기", {
