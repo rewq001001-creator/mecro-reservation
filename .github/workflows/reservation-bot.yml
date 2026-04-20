@@ -1,8 +1,6 @@
 name: Reservation Bot
 
 on:
-  schedule:
-    - cron: "0,5,10,15,20,25,30 23 * * *"
   workflow_dispatch:
 
 jobs:
